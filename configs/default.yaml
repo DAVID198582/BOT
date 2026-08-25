@@ -1,0 +1,25 @@
+data:
+  symbol: BTC/USDT
+  timeframe: 15m
+  lookback_window: 96
+  test_size: 0.2
+
+model:
+  type: random_forest
+  random_state: 42
+  probability_threshold: 0.55
+  n_estimators: 300
+  max_depth: 8
+
+backtest:
+  initial_cash: 1000.0
+  fee_rate: 0.001
+  slippage_rate: 0.0005
+  risk_per_trade: 0.25
+  stop_loss_pct: 0.02
+
+live:
+  exchange_id: binance
+  dry_run: true
+  max_position_fraction: 0.25
+
