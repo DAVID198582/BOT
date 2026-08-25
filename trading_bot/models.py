@@ -25,6 +25,8 @@ def build_model(config: ModelConfig) -> Pipeline:
         random_state=config.random_state,
         n_jobs=-1,
     )
+    # Scaler is not strictly required for trees but keeps the pipeline consistent
+    # if other model types are added later.
     return Pipeline([("scaler", MaxAbsScaler()), ("classifier", classifier)])
 
 
@@ -47,10 +49,17 @@ def evaluate_model(model: Pipeline, test_features: pd.DataFrame) -> dict[str, fl
 
 
 def predict_signal(model: Pipeline, features: pd.DataFrame, threshold: float) -> pd.Series:
+    """
+    Return +1 (long), -1 (short), or 0 (flat) based on predicted probability.
+
+    The signal at index t is the decision made *after* observing bar t
+    (i.e. using features available at the close of t). It should be
+    executed at the open of bar t+1 (handled inside the backtester).
+    """
     probabilities = model.predict_proba(features[FEATURE_COLUMNS])[:, 1]
     signals = pd.Series(0, index=features.index, dtype=int)
     signals[probabilities >= threshold] = 1
-    signals[probabilities <= 1 - threshold] = -1
+    signals[probabilities <= (1.0 - threshold)] = -1
     return signals
 
 
@@ -63,4 +72,3 @@ def save_model(model: Pipeline, path: str | Path, metadata: dict[str, Any]) -> N
 def load_model(path: str | Path) -> tuple[Pipeline, dict[str, Any]]:
     payload = joblib.load(path)
     return payload["model"], payload.get("metadata", {})
-

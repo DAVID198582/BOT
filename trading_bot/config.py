@@ -60,4 +60,3 @@ def load_config(path: str | Path = "configs/default.yaml") -> BotConfig:
         backtest=BacktestConfig(**raw.get("backtest", {})),
         live=LiveConfig(**raw.get("live", {})),
     )
-

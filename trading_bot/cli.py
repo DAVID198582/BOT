@@ -9,7 +9,13 @@ from trading_bot.bot import PaperTradingBot
 from trading_bot.config import load_config
 from trading_bot.data import load_ohlcv_csv, split_train_test
 from trading_bot.features import make_features, summarize_market
-from trading_bot.models import evaluate_model, load_model, predict_signal, save_model, train_model
+from trading_bot.models import (
+    evaluate_model,
+    load_model,
+    predict_signal,
+    save_model,
+    train_model,
+)
 
 
 def main() -> None:
@@ -30,7 +36,9 @@ def main() -> None:
     backtest_parser.add_argument("--trades-out")
     backtest_parser.add_argument("--equity-out")
 
-    paper_parser = subparsers.add_parser("paper", help="Make a paper-trading decision from latest data")
+    paper_parser = subparsers.add_parser(
+        "paper", help="Make a paper-trading decision from latest data"
+    )
     paper_parser.add_argument("--csv", required=True)
     paper_parser.add_argument("--model", required=True)
 
@@ -50,7 +58,11 @@ def main() -> None:
         save_model(
             model,
             args.model_out,
-            {"metrics": metrics, "feature_rows": len(frame), "config": args.config},
+            {
+                "metrics": metrics,
+                "feature_rows": len(frame),
+                "config": args.config,
+            },
         )
         print_json(metrics)
         return
@@ -86,4 +98,3 @@ def write_optional_csv(frame, path: str | None) -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -19,6 +19,13 @@ FEATURE_COLUMNS = [
 
 
 def make_features(frame: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build features and next-bar direction target.
+
+    All features are computed using information available at the close of bar t.
+    The target is the direction of the *next* bar (close[t+1] > close[t]).
+    The final row is dropped because its target is unknown.
+    """
     data = frame.copy()
     close = data["close"]
     high = data["high"]
@@ -32,11 +39,15 @@ def make_features(frame: pd.DataFrame) -> pd.DataFrame:
     data["volatility_96"] = data["return_1"].rolling(96).std()
     data["volume_zscore_96"] = (volume - volume.rolling(96).mean()) / volume.rolling(96).std()
     data["rsi_14"] = rsi(close, 14)
-    data["ema_gap_12_26"] = (close.ewm(span=12, adjust=False).mean() / close.ewm(span=26, adjust=False).mean()) - 1
+    data["ema_gap_12_26"] = (
+        close.ewm(span=12, adjust=False).mean() / close.ewm(span=26, adjust=False).mean()
+    ) - 1
     data["bb_position_20"] = bollinger_position(close, 20)
     data["atr_14"] = atr(high, low, close, 14) / close
     data["range_pct"] = (high - low) / close
-    data["target"] = (close.shift(-1) > close).astype(int)
+
+    # Next-bar direction (1 = up, 0 = down/flat). Last row becomes NaN and is dropped.
+    data["target"] = (close.shift(-1) > close).astype(float)
     data.replace([np.inf, -np.inf], np.nan, inplace=True)
     return data.dropna().reset_index(drop=True)
 
@@ -67,6 +78,17 @@ def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> pd.Se
 
 
 def summarize_market(frame: pd.DataFrame) -> dict[str, float]:
+    if frame.empty or len(frame) < 2:
+        return {
+            "rows": 0.0,
+            "close_start": float("nan"),
+            "close_end": float("nan"),
+            "total_return_pct": float("nan"),
+            "volatility_annualized_pct": float("nan"),
+            "max_drawdown_pct": float("nan"),
+            "error": "DataFrame is empty or has fewer than 2 rows",
+        }
+
     returns = frame["close"].pct_change().dropna()
     annualization = np.sqrt(365 * 24 * 4)
     drawdown = frame["close"] / frame["close"].cummax() - 1
@@ -78,4 +100,3 @@ def summarize_market(frame: pd.DataFrame) -> dict[str, float]:
         "volatility_annualized_pct": float(returns.std() * annualization * 100),
         "max_drawdown_pct": float(drawdown.min() * 100),
     }
-

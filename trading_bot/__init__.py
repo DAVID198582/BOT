@@ -1,6 +1,3 @@
-"""AI crypto trading bot package."""
+"""AI Crypto Trading Bot - research template."""
 
-__all__ = ["__version__"]
-
-__version__ = "0.1.0"
-
+__version__ = "0.1.1"

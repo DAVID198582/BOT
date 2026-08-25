@@ -36,4 +36,3 @@ def split_train_test(frame: pd.DataFrame, test_size: float) -> tuple[pd.DataFram
     if split_index <= 0 or split_index >= len(frame):
         raise ValueError("not enough rows for the requested train/test split")
     return frame.iloc[:split_index].copy(), frame.iloc[split_index:].copy()
-

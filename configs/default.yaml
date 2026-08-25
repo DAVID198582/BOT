@@ -22,4 +22,3 @@ live:
   exchange_id: binance
   dry_run: true
   max_position_fraction: 0.25
-

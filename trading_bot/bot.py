@@ -23,11 +23,32 @@ class PaperTradingBot:
         self.config = config
 
     def decide(self, candles: pd.DataFrame) -> Decision:
+        """
+        Produce a paper-trading decision from the latest available candles.
+
+        The signal is generated from features of the most recent complete bar.
+        In a real system you would place the corresponding order to be filled
+        at the open of the *next* bar (or via market/limit order logic).
+        """
         feature_frame = make_features(candles)
         if feature_frame.empty:
-            return Decision("hold", 0, float(candles["close"].iloc[-1]), "not enough candles for features")
-        latest = feature_frame.tail(1)
-        signal = int(predict_signal(self.model, latest, self.config.model.probability_threshold).iloc[0])
-        action = {1: "buy_or_hold_long", -1: "sell_or_hold_short", 0: "hold"}[signal]
-        return Decision(action, signal, float(latest["close"].iloc[0]), "model probability threshold decision")
+            return Decision(
+                "hold",
+                0,
+                float(candles["close"].iloc[-1]),
+                "not enough candles for features",
+            )
 
+        latest = feature_frame.tail(1)
+        signal = int(
+            predict_signal(
+                self.model, latest, self.config.model.probability_threshold
+            ).iloc[0]
+        )
+        action = {1: "buy_or_hold_long", -1: "sell_or_hold_short", 0: "hold"}[signal]
+        return Decision(
+            action,
+            signal,
+            float(latest["close"].iloc[0]),
+            "model probability threshold decision (execute next open)",
+        )

@@ -5,4 +5,5 @@ __pycache__/
 data/
 models/
 reports/
-
+*.joblib
+.DS_Store
