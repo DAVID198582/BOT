@@ -5,7 +5,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from trading_bot.config import BacktestConfig
+from trading_bot.config import BacktestConfig, RiskConfig
+from trading_bot.risk import position_plan
 
 
 @dataclass(frozen=True)
@@ -15,7 +16,12 @@ class BacktestResult:
     metrics: dict[str, float]
 
 
-def run_backtest(features: pd.DataFrame, signals: pd.Series, config: BacktestConfig) -> BacktestResult:
+def run_backtest(
+    features: pd.DataFrame,
+    signals: pd.Series,
+    config: BacktestConfig,
+    risk_config: RiskConfig | None = None,
+) -> BacktestResult:
     """
     Backtest signals with fees, slippage, stop-loss and position sizing.
 
@@ -32,6 +38,7 @@ def run_backtest(features: pd.DataFrame, signals: pd.Series, config: BacktestCon
     units = 0.0
     entry_price = 0.0
     entry_fee = 0.0
+    position_stop_pct = config.stop_loss_pct
     position_side = 0
     equity_rows: list[dict[str, float | pd.Timestamp]] = []
     trades: list[dict[str, float | str | pd.Timestamp]] = []
@@ -48,23 +55,8 @@ def run_backtest(features: pd.DataFrame, signals: pd.Series, config: BacktestCon
         close_price = float(row["close"])
         timestamp = row["timestamp"]
 
-        # 1. Check stop-loss using the current bar's high/low (intra-bar)
-        if position_side != 0:
-            stop_price = entry_price * (
-                1 - config.stop_loss_pct if position_side > 0 else 1 + config.stop_loss_pct
-            )
-            stopped = (
-                low_price <= stop_price if position_side > 0 else high_price >= stop_price
-            )
-            if stopped:
-                cash, pnl = _close_position(
-                    cash, units, position_side, entry_price, entry_fee, stop_price, config
-                )
-                trades.append(_trade(timestamp, "stop", stop_price, position_side, pnl))
-                units = 0.0
-                position_side = 0
-
-        # 2. Process signal change at the open of this bar
+        # 1. Process the prior bar's signal at this bar's open. The open occurs
+        # before this bar's high/low, so signal exits must precede stop checks.
         if signal != position_side:
             if position_side != 0:
                 cash, pnl = _close_position(
@@ -75,7 +67,20 @@ def run_backtest(features: pd.DataFrame, signals: pd.Series, config: BacktestCon
                 position_side = 0
 
             if signal != 0:
-                allocation = cash * config.risk_per_trade
+                if risk_config is None:
+                    allocation = cash * config.risk_per_trade
+                    position_stop_pct = config.stop_loss_pct
+                else:
+                    plan = position_plan(
+                        cash,
+                        open_price,
+                        float(row.get("atr_14", 0.0)),
+                        config.stop_loss_pct,
+                        config.risk_per_trade,
+                        risk_config,
+                    )
+                    allocation = plan.notional
+                    position_stop_pct = plan.stop_pct
                 if allocation > 0:
                     execution_price = _entry_price(open_price, signal, config)
                     units = allocation / execution_price
@@ -90,6 +95,28 @@ def run_backtest(features: pd.DataFrame, signals: pd.Series, config: BacktestCon
                     trades.append(
                         _trade(timestamp, "entry", execution_price, position_side, -entry_fee)
                     )
+
+        # 2. Check the current bar's intrabar range after open-price orders. This
+        # also allows a position entered above to stop during its entry bar.
+        if position_side != 0:
+            stop_price = entry_price * (
+                1 - position_stop_pct if position_side > 0 else 1 + position_stop_pct
+            )
+            stopped = (
+                low_price <= stop_price if position_side > 0 else high_price >= stop_price
+            )
+            if stopped:
+                # A gap through the stop can only fill at the less favorable open.
+                if position_side > 0 and open_price < stop_price:
+                    stop_price = open_price
+                elif position_side < 0 and open_price > stop_price:
+                    stop_price = open_price
+                cash, pnl = _close_position(
+                    cash, units, position_side, entry_price, entry_fee, stop_price, config
+                )
+                trades.append(_trade(timestamp, "stop", stop_price, position_side, pnl))
+                units = 0.0
+                position_side = 0
 
         # 3. Mark-to-market equity at the close
         position_value = units * close_price * position_side if position_side != 0 else 0.0
@@ -116,7 +143,13 @@ def run_backtest(features: pd.DataFrame, signals: pd.Series, config: BacktestCon
             config,
         )
         trades.append(
-            _trade(last_row["timestamp"], "final_exit", float(last_row["close"]), position_side, pnl)
+            _trade(
+                last_row["timestamp"],
+                "final_exit",
+                float(last_row["close"]),
+                position_side,
+                pnl,
+            )
         )
         equity_rows[-1]["equity"] = cash
         equity_rows[-1]["cash"] = cash

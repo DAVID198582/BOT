@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from trading_bot.config import BotConfig
-from trading_bot.features import make_features
+from trading_bot.features import FEATURE_COLUMNS, make_features
 from trading_bot.models import predict_signal
 
 
@@ -15,6 +15,8 @@ class Decision:
     signal: int
     close: float
     reason: str
+    probability: float | None = None
+    volatility_pct: float = 0.0
 
 
 class PaperTradingBot:
@@ -30,20 +32,22 @@ class PaperTradingBot:
         In a real system you would place the corresponding order to be filled
         at the open of the *next* bar (or via market/limit order logic).
         """
-        feature_frame = make_features(candles)
+        feature_frame = make_features(candles, include_target=False)
         if feature_frame.empty:
+            close = float(candles["close"].iloc[-1]) if not candles.empty else float("nan")
             return Decision(
                 "hold",
                 0,
-                float(candles["close"].iloc[-1]),
+                close,
                 "not enough candles for features",
             )
 
         latest = feature_frame.tail(1)
+        probability = float(
+            self.model.predict_proba(latest[FEATURE_COLUMNS])[:, 1][0]
+        )
         signal = int(
-            predict_signal(
-                self.model, latest, self.config.model.probability_threshold
-            ).iloc[0]
+            predict_signal(self.model, latest, self.config.model.probability_threshold).iloc[0]
         )
         action = {1: "buy_or_hold_long", -1: "sell_or_hold_short", 0: "hold"}[signal]
         return Decision(
@@ -51,4 +55,6 @@ class PaperTradingBot:
             signal,
             float(latest["close"].iloc[0]),
             "model probability threshold decision (execute next open)",
+            probability,
+            float(latest["atr_14"].iloc[0]),
         )

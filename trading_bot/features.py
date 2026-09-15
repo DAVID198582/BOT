@@ -18,13 +18,14 @@ FEATURE_COLUMNS = [
 ]
 
 
-def make_features(frame: pd.DataFrame) -> pd.DataFrame:
+def make_features(frame: pd.DataFrame, *, include_target: bool = True) -> pd.DataFrame:
     """
-    Build features and next-bar direction target.
+    Build model features and, when requested, the next-bar direction target.
 
     All features are computed using information available at the close of bar t.
-    The target is the direction of the *next* bar (close[t+1] > close[t]).
-    The final row is dropped because its target is unknown.
+    The training target is the direction of the *next* bar
+    (close[t+1] > close[t]). The final row is kept for inference, but dropped
+    during training because its target is not known yet.
     """
     data = frame.copy()
     close = data["close"]
@@ -37,7 +38,11 @@ def make_features(frame: pd.DataFrame) -> pd.DataFrame:
     data["return_16"] = close.pct_change(16)
     data["volatility_16"] = data["return_1"].rolling(16).std()
     data["volatility_96"] = data["return_1"].rolling(96).std()
-    data["volume_zscore_96"] = (volume - volume.rolling(96).mean()) / volume.rolling(96).std()
+    volume_mean = volume.rolling(96).mean()
+    volume_std = volume.rolling(96).std()
+    data["volume_zscore_96"] = ((volume - volume_mean) / volume_std).mask(
+        volume_std == 0, 0.0
+    )
     data["rsi_14"] = rsi(close, 14)
     data["ema_gap_12_26"] = (
         close.ewm(span=12, adjust=False).mean() / close.ewm(span=26, adjust=False).mean()
@@ -46,8 +51,12 @@ def make_features(frame: pd.DataFrame) -> pd.DataFrame:
     data["atr_14"] = atr(high, low, close, 14) / close
     data["range_pct"] = (high - low) / close
 
-    # Next-bar direction (1 = up, 0 = down/flat). Last row becomes NaN and is dropped.
-    data["target"] = (close.shift(-1) > close).astype(float)
+    if include_target:
+        # Comparing against NaN yields False, so explicitly restore the final
+        # unknown target to NaN instead of silently training it as a down bar.
+        data["target"] = (close.shift(-1) > close).astype(float)
+        if not data.empty:
+            data.loc[data.index[-1], "target"] = np.nan
     data.replace([np.inf, -np.inf], np.nan, inplace=True)
     return data.dropna().reset_index(drop=True)
 
@@ -57,7 +66,9 @@ def rsi(close: pd.Series, period: int) -> pd.Series:
     gains = delta.clip(lower=0).rolling(period).mean()
     losses = -delta.clip(upper=0).rolling(period).mean()
     relative_strength = gains / losses.replace(0, np.nan)
-    return 100 - (100 / (1 + relative_strength))
+    result = 100 - (100 / (1 + relative_strength))
+    result = result.mask((losses == 0) & (gains > 0), 100.0)
+    return result.mask((losses == 0) & (gains == 0), 50.0)
 
 
 def bollinger_position(close: pd.Series, period: int) -> pd.Series:
@@ -65,7 +76,8 @@ def bollinger_position(close: pd.Series, period: int) -> pd.Series:
     std = close.rolling(period).std()
     upper = mean + (2 * std)
     lower = mean - (2 * std)
-    return (close - lower) / (upper - lower)
+    band_width = upper - lower
+    return ((close - lower) / band_width).mask(band_width == 0, 0.5)
 
 
 def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> pd.Series:
