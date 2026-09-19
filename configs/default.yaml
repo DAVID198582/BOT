@@ -21,4 +21,34 @@ backtest:
 live:
   exchange_id: binance
   dry_run: true
+  sandbox: false
   max_position_fraction: 0.25
+  poll_interval_seconds: 30
+  candle_limit: 200
+  state_path: reports/live_state.json
+  journal_path: reports/trades.jsonl
+  native_protection: true
+  require_native_protection: false
+  require_approved_model: true
+
+risk:
+  risk_per_trade_fraction: 0.005
+  atr_stop_multiplier: 2.0
+  take_profit_pct: 0.04
+  trailing_stop_pct: 0.015
+  break_even_trigger_pct: 0.02
+  max_daily_loss_fraction: 0.03
+  max_consecutive_losses: 3
+  cooldown_minutes: 240
+
+portfolio:
+  max_total_exposure_fraction: 0.50
+  max_open_positions: 3
+  correlation_threshold: 0.80
+  state_path: reports/portfolio_state.json
+
+validation:
+  folds: 3
+  min_accuracy: 0.52
+  min_roc_auc: 0.52
+  max_drawdown_pct: -20.0

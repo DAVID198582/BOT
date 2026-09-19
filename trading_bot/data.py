@@ -35,4 +35,9 @@ def split_train_test(frame: pd.DataFrame, test_size: float) -> tuple[pd.DataFram
     split_index = int(len(frame) * (1 - test_size))
     if split_index <= 0 or split_index >= len(frame):
         raise ValueError("not enough rows for the requested train/test split")
-    return frame.iloc[:split_index].copy(), frame.iloc[split_index:].copy()
+    # The target on row t uses the close of t+1. Purge the boundary row so the
+    # training labels never depend on the first bar in the test period.
+    train_end = split_index - 1 if "target" in frame.columns else split_index
+    if train_end <= 0:
+        raise ValueError("not enough rows after purging the train/test boundary")
+    return frame.iloc[:train_end].copy(), frame.iloc[split_index:].copy()
